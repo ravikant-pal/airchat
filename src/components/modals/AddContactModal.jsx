@@ -1,7 +1,6 @@
-import AddIcon from '@mui/icons-material/Add';
-import { Alert, Fab, InputAdornment, useMediaQuery } from '@mui/material';
+import { Alert, InputAdornment, useMediaQuery } from '@mui/material';
 
-import PeopleOutlineRounded from '@mui/icons-material/PeopleOutlineRounded';
+import AlternateEmailRounded from '@mui/icons-material/AlternateEmailRounded';
 import {
   Button,
   Dialog,
@@ -13,12 +12,25 @@ import {
 import { useState } from 'react';
 import { peerService } from '../../services/peerService';
 
-export function AddContactModal({ myProfile }) {
+const USERNAME_REGEX = /^[a-z0-9_]+$/;
+
+export function AddContactModal({ myProfile, open, setOpen }) {
   const isMobile = useMediaQuery('(max-width:768px)');
-  const [open, setOpen] = useState(false);
+  // const [open, setOpen] = useState(false);
   const [peerId, setPeerId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const handleUsernameChange = (e) => {
+    const value = e.target.value.replace('@', '');
+
+    if (!USERNAME_REGEX.test(value)) {
+      setError('Only lowercase letters, numbers, and underscores');
+    } else {
+      setError('');
+    }
+    setPeerId(value);
+  };
 
   const handleAdd = async () => {
     setError('');
@@ -36,15 +48,17 @@ export function AddContactModal({ myProfile }) {
     setLoading(true);
 
     try {
-      // Send contact request with full profile
-      await peerService.sendContactRequest(peerId.trim(), myProfile);
+      console.log(myProfile, 'myProfile');
+
+      // Send contact request via PeerJS
+      await peerService.sendContactRequest(peerId, myProfile);
 
       setPeerId('');
       setOpen(false);
       setError('');
     } catch (error) {
       console.error('Error sending contact request:', error);
-      setError(
+      alert(
         'Failed to send contact request. Please check the Peer ID and try again.',
       );
     } finally {
@@ -53,81 +67,66 @@ export function AddContactModal({ myProfile }) {
   };
 
   return (
-    <>
-      <Fab
-        color='primary'
-        sx={{
-          position: 'absolute',
-          bottom: 16,
-          right: 16,
-        }}
-        onClick={() => setOpen(true)}
-      >
-        <AddIcon />
-      </Fab>
-      <Dialog open={open} fullWidth onClose={() => !loading && setOpen(false)}>
-        <DialogTitle>Add Contact</DialogTitle>
-        <DialogContent>
-          {error && (
-            <Alert severity='error' sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
-          <TextField
-            fullWidth
-            size={isMobile ? 'small' : 'medium'}
-            placeholder='Enter Peer Id'
-            value={peerId}
-            onChange={(e) => {
-              setPeerId(e.target.value);
-              setError('');
-            }}
-            disabled={loading}
-            autoFocus
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                handleAdd();
-              }
-            }}
-            sx={{
-              mb: 1,
-              px: 1,
-              '& .MuiOutlinedInput-root': {
-                borderRadius: 10,
-              },
-            }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position='start'>
-                    <PeopleOutlineRounded color='primary' />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => {
-              setOpen(false);
-              setError('');
-              setPeerId('');
-            }}
-            disabled={loading}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleAdd}
-            sx={{ borderRadius: 2 }}
-            variant='contained'
-            disabled={loading || !peerId.trim()}
-          >
-            {loading ? 'Sending...' : 'Send Request'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </>
+    <Dialog open={open} fullWidth onClose={() => !loading && setOpen(false)}>
+      <DialogTitle>Add Contact</DialogTitle>
+      <DialogContent>
+        {error && (
+          <Alert severity='error' sx={{ mb: 2, borderRadius: 10 }}>
+            {error}
+          </Alert>
+        )}
+        <TextField
+          fullWidth
+          size={isMobile ? 'small' : 'medium'}
+          placeholder='Enter @username'
+          value={peerId}
+          onChange={handleUsernameChange}
+          disabled={loading}
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              handleAdd();
+            }
+          }}
+          sx={{
+            mb: 1,
+            px: 1,
+            '& .MuiOutlinedInput-root': {
+              borderRadius: 10,
+            },
+          }}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position='start'>
+                  <AlternateEmailRounded color='primary' />
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button
+          onClick={() => {
+            setOpen(false);
+            setError('');
+            setPeerId('');
+          }}
+          disabled={loading}
+        >
+          Cancel
+        </Button>
+        <Button
+          onClick={handleAdd}
+          sx={{ borderRadius: 2 }}
+          variant='contained'
+          disabled={loading || !peerId.trim()}
+        >
+          {loading ? 'Sending...' : 'Send Request'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }

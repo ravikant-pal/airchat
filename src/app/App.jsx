@@ -8,7 +8,7 @@ import { db } from '../services/db';
 import { peerService } from '../services/peerService';
 import AppShell from './AppShell';
 
-export default function App() {
+export default function App({ toggleTheme, themeMode }) {
   const [activePeer, setActivePeer] = useState(null);
   const [pendingRequest, setPendingRequest] = useState(null);
   const retryTimers = useRef(new Map());
@@ -16,54 +16,89 @@ export default function App() {
 
   const myProfile = useLiveQuery(() => db.profile.toCollection().first());
 
-  // Auto-reconnect logic
-  useEffect(() => {
-    if (!myProfile?.peerId) return;
+  // Define attemptReconnect at the top level so it's accessible everywhere
+  const attemptReconnect = async (contact) => {
+    const peerId = contact.peerId;
+    const currentAttempts = retryAttempts.current.get(peerId) || 0;
+    const MAX_RETRIES = 5;
 
-    const attemptReconnect = async (contact) => {
-      const peerId = contact.peerId;
-      const currentAttempts = retryAttempts.current.get(peerId) || 0;
-      const MAX_RETRIES = 5;
-
-      if (currentAttempts >= MAX_RETRIES) {
-        console.log(`Max retries reached for ${peerId}`);
-        await db.contacts.update(peerId, {
-          connectionStatus: 'failed',
-          online: false,
-        });
-        return;
-      }
-
-      // Update status to connecting
+    if (currentAttempts >= MAX_RETRIES) {
+      console.log(`Max retries reached for ${peerId}`);
       await db.contacts.update(peerId, {
-        connectionStatus: 'connecting',
+        connectionStatus: 'failed',
         online: false,
       });
+      return;
+    }
 
-      console.log(
-        `Attempting to reconnect to ${peerId} (attempt ${currentAttempts + 1}/${MAX_RETRIES})`,
-      );
+    // Update status to connecting
+    await db.contacts.update(peerId, {
+      connectionStatus: 'connecting',
+      online: false,
+    });
 
-      try {
-        await peerService.connect(peerId);
-        // If successful, reset retry count
-        retryAttempts.current.set(peerId, 0);
-      } catch (error) {
-        console.error(`Failed to connect to ${peerId}:`, error);
+    console.log(
+      `Attempting to reconnect to ${peerId} (attempt ${currentAttempts + 1}/${MAX_RETRIES})`,
+    );
 
-        // Increment retry count
-        retryAttempts.current.set(peerId, currentAttempts + 1);
+    try {
+      await peerService.connect(peerId);
+      // If successful, reset retry count
+      retryAttempts.current.set(peerId, 0);
 
-        // Schedule next retry with exponential backoff
-        const retryDelay = Math.min(1000 * Math.pow(2, currentAttempts), 30000); // Max 30 seconds
+      // Clear any pending timers
+      const timer = retryTimers.current.get(peerId);
+      if (timer) {
+        clearTimeout(timer);
+        retryTimers.current.delete(peerId);
+      }
+    } catch (error) {
+      console.error(`Failed to connect to ${peerId}:`, error);
 
-        const timer = setTimeout(() => {
-          attemptReconnect(contact);
-        }, retryDelay);
+      // Increment retry count
+      retryAttempts.current.set(peerId, currentAttempts + 1);
 
-        retryTimers.current.set(peerId, timer);
+      // Schedule next retry with exponential backoff
+      const retryDelay = Math.min(1000 * Math.pow(2, currentAttempts), 30000); // Max 30 seconds
+
+      const timer = setTimeout(async () => {
+        const c = await db.contacts.get(peerId);
+        if (c?.isAccepted) {
+          attemptReconnect(c);
+        }
+      }, retryDelay);
+
+      retryTimers.current.set(peerId, timer);
+    }
+  };
+
+  // Expose reconnect function globally for ChatHeader
+  useEffect(() => {
+    window.manualReconnect = async (peerId) => {
+      // Clear existing retry attempts and timers
+      const timer = retryTimers.current.get(peerId);
+      if (timer) {
+        clearTimeout(timer);
+        retryTimers.current.delete(peerId);
+      }
+
+      // Reset retry count for manual reconnect
+      retryAttempts.current.set(peerId, 0);
+
+      const contact = await db.contacts.get(peerId);
+      if (contact?.isAccepted) {
+        await attemptReconnect(contact);
       }
     };
+
+    return () => {
+      delete window.manualReconnect;
+    };
+  }, []);
+
+  // Auto-reconnect logic on mount
+  useEffect(() => {
+    if (!myProfile?.peerId) return;
 
     const startAutoReconnect = async () => {
       const acceptedContacts = await db.contacts
@@ -114,6 +149,8 @@ export default function App() {
     });
 
     peerService.onPeerOnline(async (peerId) => {
+      console.log('Peer online:', peerId);
+
       // Clear any pending retry timers
       const timer = retryTimers.current.get(peerId);
       if (timer) {
@@ -132,6 +169,8 @@ export default function App() {
     });
 
     peerService.onPeerOffline(async (peerId) => {
+      console.log('Peer offline:', peerId);
+
       await db.contacts.update(peerId, {
         online: false,
         connectionStatus: 'disconnected',
@@ -142,60 +181,24 @@ export default function App() {
       const contact = await db.contacts.get(peerId);
       if (contact?.isAccepted) {
         retryAttempts.current.set(peerId, 0); // Reset on disconnect
-        const timer = setTimeout(() => {
-          db.contacts.get(peerId).then((c) => {
-            if (c?.isAccepted) {
-              attemptReconnect(c);
-            }
-          });
+
+        // Clear any existing timer
+        const existingTimer = retryTimers.current.get(peerId);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
+
+        const timer = setTimeout(async () => {
+          const c = await db.contacts.get(peerId);
+          if (c?.isAccepted) {
+            attemptReconnect(c);
+          }
         }, 5000); // Wait 5 seconds before first retry
 
         retryTimers.current.set(peerId, timer);
       }
     });
   }, [myProfile?.peerId]);
-
-  const attemptReconnect = async (contact) => {
-    const peerId = contact.peerId;
-    const currentAttempts = retryAttempts.current.get(peerId) || 0;
-    const MAX_RETRIES = 5;
-
-    if (currentAttempts >= MAX_RETRIES) {
-      console.log(`Max retries reached for ${peerId}`);
-      await db.contacts.update(peerId, {
-        connectionStatus: 'failed',
-        online: false,
-      });
-      return;
-    }
-
-    await db.contacts.update(peerId, {
-      connectionStatus: 'connecting',
-      online: false,
-    });
-
-    console.log(
-      `Reconnecting to ${peerId} (${currentAttempts + 1}/${MAX_RETRIES})`,
-    );
-
-    try {
-      await peerService.connect(peerId);
-      retryAttempts.current.set(peerId, 0);
-    } catch (error) {
-      retryAttempts.current.set(peerId, currentAttempts + 1);
-      const retryDelay = Math.min(1000 * Math.pow(2, currentAttempts), 30000);
-
-      const timer = setTimeout(() => {
-        db.contacts.get(peerId).then((c) => {
-          if (c?.isAccepted) {
-            attemptReconnect(c);
-          }
-        });
-      }, retryDelay);
-
-      retryTimers.current.set(peerId, timer);
-    }
-  };
 
   const handleAcceptRequest = async (peerId) => {
     await peerService.acceptContactRequest(peerId, myProfile);
@@ -211,7 +214,14 @@ export default function App() {
     <>
       <AppShell
         showChat={!!activePeer}
-        chatList={<ChatList onSelect={setActivePeer} myProfile={myProfile} />}
+        chatList={
+          <ChatList
+            onSelect={setActivePeer}
+            myProfile={myProfile}
+            toggleTheme={toggleTheme}
+            themeMode={themeMode}
+          />
+        }
         chatWindow={
           activePeer && (
             <ChatWindow

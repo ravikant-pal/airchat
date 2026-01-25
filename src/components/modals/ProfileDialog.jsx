@@ -225,7 +225,7 @@ export default function ProfileDialog({ open, setOpen }) {
         )}
 
         <Box display='flex' gap={2}>
-          {step === 2 && (
+          {!isEdit && step === 2 && (
             <Button
               fullWidth
               variant='outlined'

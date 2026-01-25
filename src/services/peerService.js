@@ -341,26 +341,64 @@ class PeerService {
 
     if (!contact?.isAccepted) {
       console.warn('Cannot connect to non-accepted contact');
+      throw new Error('Cannot connect to non-accepted contact');
+    }
+
+    // If already connected, just return
+    if (this.connections.has(peerId)) {
+      console.log(`Already connected to ${peerId}`);
       return;
     }
 
-    if (this.connections.has(peerId)) return;
+    return new Promise((resolve, reject) => {
+      const conn = this.peer.connect(peerId);
+      let connectionTimeout;
 
-    const conn = this.peer.connect(peerId);
+      // Set a timeout for connection attempt (30 seconds)
+      connectionTimeout = setTimeout(() => {
+        if (!conn.open) {
+          conn.close();
+          reject(new Error('Connection timeout'));
+        }
+      }, 30000);
 
-    conn.on('open', async () => {
-      this._registerConnection(conn);
-      await db.contacts.update(peerId, {
-        online: true,
-        connectionStatus: 'connected',
+      conn.on('open', async () => {
+        clearTimeout(connectionTimeout);
+        console.log(`Successfully connected to ${peerId}`);
+
+        this._registerConnection(conn);
+        await db.contacts.update(peerId, {
+          online: true,
+          connectionStatus: 'connected',
+          lastSeen: null,
+        });
+
+        resolve();
       });
-    });
 
-    conn.on('error', async (err) => {
-      console.error('Connection error:', err);
-      await db.contacts.update(peerId, {
-        connectionStatus: 'disconnected',
-        online: false,
+      conn.on('error', async (err) => {
+        clearTimeout(connectionTimeout);
+        console.error('Connection error:', err);
+
+        await db.contacts.update(peerId, {
+          connectionStatus: 'disconnected',
+          online: false,
+          lastSeen: Date.now(),
+        });
+
+        reject(err);
+      });
+
+      conn.on('close', async () => {
+        clearTimeout(connectionTimeout);
+        console.log(`Connection closed to ${peerId}`);
+
+        this.connections.delete(peerId);
+        await db.contacts.update(peerId, {
+          online: false,
+          connectionStatus: 'disconnected',
+          lastSeen: Date.now(),
+        });
       });
     });
   }

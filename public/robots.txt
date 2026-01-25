@@ -1,0 +1,15 @@
+# robots.txt for AirChat
+# P2P chat app with local storage only
+
+User-agent: *
+# Allow crawling the main app
+Allow: /
+
+# Disallow unnecessary folders
+Disallow: /node_modules/
+Disallow: /dist/
+Disallow: /icons/
+Disallow: /src/
+
+# Sitemap (optional, add if you host one)
+# Sitemap: https://ravikant-pal.github.io/airchat/sitemap.xml
