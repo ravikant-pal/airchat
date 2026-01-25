@@ -5,6 +5,7 @@ import App from './app/App';
 import { darkTheme, lightTheme } from './theme/theme';
 
 import { registerSW } from 'virtual:pwa-register';
+import { FullscreenProvider } from './contexts/FullscreenProvider';
 
 registerSW({ immediate: true });
 
@@ -31,7 +32,9 @@ function Root() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <App toggleTheme={toggleTheme} themeMode={mode} />
+      <FullscreenProvider>
+        <App toggleTheme={toggleTheme} themeMode={mode} />
+      </FullscreenProvider>
     </ThemeProvider>
   );
 }
