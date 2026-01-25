@@ -1,239 +1,245 @@
-import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useState } from 'react';
-import { messagesDB } from '../../services/db';
-import { p2pService } from '../../services/p2p';
-import { Avatar } from '../shared/Avatar';
+import { Box, Typography, useMediaQuery } from '@mui/material';
+import { useEffect, useRef } from 'react';
+import { db } from '../../services/db';
+import { peerService } from '../../services/peerService';
+import { ChatHeader } from './ChatHeader';
 import { ChatInput } from './ChatInput';
 import { MessageList } from './MessageList';
 
-export const ChatWindow = ({ contact, currentUserId, onBack }) => {
-  const [isTyping, setIsTyping] = useState(false);
-  const messages = useLiveQuery(
-    () => (contact ? messagesDB.getByRoom(contact.roomId) : []),
-    [contact?.roomId],
-  );
+export function ChatWindow({ peerId, onBack }) {
+  const isMobile = useMediaQuery('(max-width:768px)');
+  const isWindowActive = useRef(true);
 
   useEffect(() => {
-    markAsRead();
-  }, [contact?.roomId]);
+    // Mark all messages as seen when chat window opens
+    const markMessagesAsSeen = async () => {
+      if (!peerId) return;
 
-  const markAsRead = async () => {
-    if (!contact) return;
+      // Get all unread messages from this peer
+      const unreadMessages = await db.messages
+        .where('peerId')
+        .equals(peerId)
+        .and((msg) => msg.sender === 'peer' && msg.status !== 'seen')
+        .toArray();
 
-    const unread = await messagesDB.getUnreadByRoom(contact.roomId);
+      // Update all to seen
+      for (const msg of unreadMessages) {
+        await db.messages.update(msg.id, { status: 'seen' });
 
-    for (const msg of unread) {
-      await messagesDB.updateByMessageId(msg.messageId, { read: true });
-
-      p2pService.actions.get(contact.roomId)?.sendReceipt({
-        messageId: msg.messageId,
-        status: 'read',
-      });
-    }
-  };
-
-  const base64ToBlob = (base64, type) => {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type });
-  };
-
-  const blobToBase64 = (blob) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  };
-
-  const handleSendMessage = async ({ content, type, file }) => {
-    if (!contact) return;
-
-    let messageContent = content;
-    let imageData = null;
-    const messageId = crypto.randomUUID();
-
-    // Process image if present
-    if (type === 'image' && file) {
-      try {
-        const base64 = await blobToBase64(file);
-        imageData = {
-          data: base64,
-          type: file.type,
-          name: file.name,
-          size: file.size,
-        };
-        messageContent = JSON.stringify(imageData);
-      } catch (error) {
-        console.error('Error processing image:', error);
-        return;
+        // Send seen status to peer
+        peerService.send(peerId, {
+          type: 'status',
+          messageId: msg.id,
+          status: 'seen',
+        });
       }
-    }
-
-    // Save to local DB
-    const message = {
-      messageId,
-      peerId: contact.peerId,
-      roomId: contact.roomId,
-      content: messageContent,
-      type,
-      timestamp: Date.now(),
-      isMine: true,
-      sent: false,
-      delivered: false,
-      read: false,
     };
 
-    const msgId = await messagesDB.add(message);
+    markMessagesAsSeen();
+  }, [peerId]);
 
-    // Send via P2P
-    p2pService.sendMessage(contact.roomId, {
-      type: 'message',
-      messageId,
-      content: messageContent,
-      messageType: type,
-      timestamp: message.timestamp,
-    });
+  useEffect(() => {
+    // Track if window is visible/focused (for desktop)
+    const handleVisibilityChange = () => {
+      isWindowActive.current = !document.hidden;
 
-    // Update sent status
-    await messagesDB.updateByMessageId(msgId, { sent: true });
+      // Mark messages as seen when window becomes active
+      if (isWindowActive.current && peerId) {
+        markMessagesAsSeen();
+      }
+    };
 
-    // Reload messages
-  };
+    const handleFocus = () => {
+      isWindowActive.current = true;
+      if (peerId) {
+        markMessagesAsSeen();
+      }
+    };
 
-  if (!contact) {
+    const handleBlur = () => {
+      isWindowActive.current = false;
+    };
+
+    const markMessagesAsSeen = async () => {
+      if (!peerId) return;
+
+      const unreadMessages = await db.messages
+        .where('peerId')
+        .equals(peerId)
+        .and((msg) => msg.sender === 'peer' && msg.status !== 'seen')
+        .toArray();
+
+      for (const msg of unreadMessages) {
+        await db.messages.update(msg.id, { status: 'seen' });
+
+        peerService.send(peerId, {
+          type: 'status',
+          messageId: msg.id,
+          status: 'seen',
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [peerId]);
+
+  useEffect(() => {
+    // Handle incoming messages and files
+    const handleMessage = async (fromPeer, data) => {
+      console.log('fromPeer', fromPeer, 'data', data);
+
+      try {
+        if (data.type === 'message') {
+          // Check if message already exists
+          const existingMessage = await db.messages
+            .where('id')
+            .equals(data.id)
+            .first();
+
+          if (existingMessage) {
+            console.log('Message already exists, skipping:', data.id);
+            return;
+          }
+
+          // Determine initial status based on platform and active window
+          let initialStatus = 'delivered';
+
+          // On mobile: only mark as seen if this is the active chat
+          // On desktop: mark as seen if window is focused and this is the active chat
+          const shouldMarkAsSeen = isMobile
+            ? peerId === fromPeer
+            : peerId === fromPeer && isWindowActive.current;
+
+          if (shouldMarkAsSeen) {
+            initialStatus = 'seen';
+          }
+
+          // Store the message
+          await db.messages.put({
+            peerId: fromPeer,
+            sender: 'peer',
+            content: data.text,
+            timestamp: data.timestamp || Date.now(),
+            status: initialStatus,
+            type: 'text',
+            id: data.id,
+          });
+
+          // Send appropriate status acknowledgment
+          peerService.send(fromPeer, {
+            type: 'status',
+            messageId: data.id,
+            status: initialStatus,
+          });
+        }
+
+        if (data.type === 'file') {
+          // Check if file message already exists
+          const existingMessage = await db.messages
+            .where('id')
+            .equals(data.id)
+            .first();
+
+          if (existingMessage) {
+            console.log('File message already exists, skipping:', data.id);
+            return;
+          }
+
+          // Determine initial status
+          let initialStatus = 'delivered';
+
+          const shouldMarkAsSeen = isMobile
+            ? peerId === fromPeer
+            : peerId === fromPeer && isWindowActive.current;
+
+          if (shouldMarkAsSeen) {
+            initialStatus = 'seen';
+          }
+
+          // Store the file message
+          await db.messages.put({
+            peerId: fromPeer,
+            sender: 'peer',
+            content: data.fileName,
+            timestamp: data.timestamp || Date.now(),
+            status: initialStatus,
+            type: 'file',
+            file: data.fileBase64,
+            id: data.id,
+          });
+
+          // Send appropriate status acknowledgment
+          peerService.send(fromPeer, {
+            type: 'status',
+            messageId: data.id,
+            status: initialStatus,
+          });
+        }
+
+        if (data.type === 'typing') {
+          await db.typing.put({ peerId: fromPeer, isTyping: data.isTyping });
+        }
+      } catch (error) {
+        console.error('Error handling message:', error);
+      }
+    };
+
+    // Handle status updates
+    const handleStatus = async (fromPeer, data) => {
+      try {
+        const updated = await db.messages
+          .where('id')
+          .equals(data.messageId)
+          .modify({ status: data.status });
+
+        if (updated === 0) {
+          console.warn(
+            'No message found to update status for:',
+            data.messageId,
+          );
+        }
+      } catch (error) {
+        console.error('Error updating message status:', error);
+      }
+    };
+
+    peerService.onMessage(handleMessage);
+    peerService.onStatus(handleStatus);
+
+    // Cleanup
+    return () => {
+      // Optional: cleanup if needed
+    };
+  }, [peerId, isMobile]);
+
+  if (!peerId) {
     return (
-      <div
-        style={{
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: '#f0f2f5',
-          color: '#667781',
-        }}
+      <Box
+        height='100%'
+        display='flex'
+        alignItems='center'
+        justifyContent='center'
       >
-        <div style={{ textAlign: 'center' }}>
-          <p style={{ fontSize: '64px', margin: '0 0 16px 0' }}>💬</p>
-          <h2
-            style={{ margin: '0 0 8px 0', fontSize: '32px', color: '#41525d' }}
-          >
-            AirChat
-          </h2>
-          <p style={{ margin: 0, fontSize: '14px' }}>
-            Select a contact to start chatting
-          </p>
-        </div>
-      </div>
+        <Typography color='text.secondary'>
+          Select a chat to start messaging
+        </Typography>
+      </Box>
     );
   }
 
   return (
-    <div
-      style={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'white',
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          padding: '10px 16px',
-          background: '#f0f2f5',
-          borderBottom: '1px solid #e4e6eb',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-        }}
-      >
-        {/* Back button (mobile only) */}
-        <button
-          onClick={onBack}
-          style={{
-            display: 'none',
-            background: 'transparent',
-            border: 'none',
-            fontSize: '24px',
-            cursor: 'pointer',
-            padding: '8px',
-            color: '#54656f',
-          }}
-          className='mobile-back-btn'
-        >
-          ←
-        </button>
-
-        <Avatar
-          name={contact.displayName}
-          size={40}
-          online={contact.isOnline}
-        />
-
-        <div style={{ flex: 1 }}>
-          <h3
-            style={{
-              margin: 0,
-              fontSize: '16px',
-              fontWeight: '500',
-              color: '#111b21',
-            }}
-          >
-            {contact.displayName}
-          </h3>
-          <p
-            style={{
-              margin: 0,
-              fontSize: '13px',
-              color: '#667781',
-            }}
-          >
-            {contact.isOnline
-              ? 'online'
-              : `last seen ${new Date(contact.lastSeen).toLocaleString()}`}
-          </p>
-        </div>
-
-        {/* More options button */}
-        {/* <button
-          style={{
-            background: 'transparent',
-            border: 'none',
-            fontSize: '24px',
-            cursor: 'pointer',
-            padding: '8px',
-            color: '#54656f',
-          }}
-        >
-          ⋮
-        </button> */}
-      </div>
-
-      {/* Messages */}
-      <MessageList messages={messages} currentUserId={currentUserId} />
-
-      {/* Typing indicator */}
-      {isTyping && (
-        <div
-          style={{
-            padding: '8px 16px',
-            fontSize: '13px',
-            color: '#667781',
-            fontStyle: 'italic',
-          }}
-        >
-          Typing...
-        </div>
-      )}
-
-      {/* Input */}
-      <ChatInput onSend={handleSendMessage} disabled={!contact.isOnline} />
-    </div>
+    <Box display='flex' flexDirection='column' height='100%'>
+      <ChatHeader peerId={peerId} onBack={onBack} />
+      <MessageList peerId={peerId} />
+      <ChatInput peerId={peerId} />
+    </Box>
   );
-};
+}

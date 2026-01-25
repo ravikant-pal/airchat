@@ -1,183 +1,187 @@
+import AttachFileRounded from '@mui/icons-material/AttachFileRounded';
+import SendRounded from '@mui/icons-material/SendRounded';
+import {
+  alpha,
+  Box,
+  IconButton,
+  InputAdornment,
+  TextField,
+  useMediaQuery,
+} from '@mui/material';
 import { useRef, useState } from 'react';
+import { v4 as uuid } from 'uuid';
+import { db } from '../../services/db';
+import { peerService } from '../../services/peerService';
 
-export const ChatInput = ({ onSend, disabled }) => {
-  const [message, setMessage] = useState('');
-  const [imageFile, setImageFile] = useState(null);
+export function ChatInput({ peerId }) {
+  const isMobile = useMediaQuery('(max-width:768px)');
+  const [text, setText] = useState('');
+  const [filePreview, setFilePreview] = useState(null);
   const fileInputRef = useRef(null);
+  const typingTimeout = useRef(null);
+  const isTyping = useRef(false);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-
-    if (!message.trim() && !imageFile) return;
-
-    onSend({
-      content: message.trim(),
-      type: imageFile ? 'image' : 'text',
-      file: imageFile,
-    });
-
-    setMessage('');
-    setImageFile(null);
+  const sendTyping = (state) => {
+    peerService.connect(peerId);
+    peerService.send(peerId, { type: 'typing', isTyping: state });
   };
 
-  const handleImageSelect = (e) => {
+  const handleTyping = (value) => {
+    setText(value);
+    if (!isTyping.current) {
+      sendTyping(true);
+      isTyping.current = true;
+    }
+    clearTimeout(typingTimeout.current);
+    typingTimeout.current = setTimeout(() => {
+      sendTyping(false);
+      isTyping.current = false;
+    }, 1200);
+  };
+
+  const sendMessage = async () => {
+    if (!text.trim() && !filePreview) return;
+
+    const messageId = uuid();
+    const timestamp = Date.now();
+
+    try {
+      if (text.trim()) {
+        // // Store message locally first
+        await db.messages.add({
+          peerId,
+          sender: 'me',
+          content: text,
+          timestamp,
+          status: 'sent',
+          type: 'text',
+          id: messageId,
+        });
+
+        // Send to peer
+        peerService.send(peerId, {
+          type: 'message',
+          id: messageId,
+          text: text,
+          timestamp,
+        });
+      }
+
+      if (filePreview) {
+        const { name, type, base64 } = filePreview;
+        const fileMessageId = uuid(); // Separate ID for file
+
+        // Store file message locally
+        await db.messages.add({
+          peerId,
+          sender: 'me',
+          content: name,
+          timestamp,
+          status: 'sent',
+          type: 'file',
+          file: base64,
+          id: fileMessageId,
+        });
+
+        // Send to peer
+        peerService.send(peerId, {
+          type: 'file',
+          id: fileMessageId,
+          fileName: name,
+          fileType: type,
+          fileBase64: base64,
+          timestamp,
+        });
+
+        setFilePreview(null);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+    } finally {
+      isTyping.current = false;
+      sendTyping(false);
+      setText('');
+    }
+  };
+
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-      setImageFile(file);
-    }
-  };
+    if (!file) return;
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setFilePreview({
+        base64: reader.result,
+        name: file.name,
+        type: file.type,
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
-    <div
-      style={{
-        background: '#f0f2f5',
-        padding: '10px 16px',
-        display: 'flex',
-        alignItems: 'flex-end',
-        gap: '8px',
-        borderTop: '1px solid #e4e6eb',
-      }}
-    >
-      {/* Attach button */}
-      <button
-        type='button'
-        onClick={() => fileInputRef.current?.click()}
-        disabled={disabled}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          padding: '8px',
-          color: '#54656f',
-          fontSize: '24px',
-          display: 'flex',
-          alignItems: 'center',
-          opacity: disabled ? 0.5 : 1,
-        }}
-        title='Attach image'
-      >
-        📎
-      </button>
+    <Box display='flex' alignItems='flex-end' p={1}>
       <input
         ref={fileInputRef}
         type='file'
-        accept='image/*'
-        onChange={handleImageSelect}
         style={{ display: 'none' }}
+        onChange={handleFileChange}
       />
 
-      {/* Message input */}
-      <form
-        onSubmit={handleSubmit}
-        style={{ flex: 1, display: 'flex', gap: '8px' }}
-      >
-        <div style={{ flex: 1, position: 'relative' }}>
-          {imageFile && (
-            <div
-              style={{
-                position: 'absolute',
-                bottom: '100%',
-                left: 0,
-                marginBottom: '8px',
-                background: 'white',
-                padding: '8px',
-                borderRadius: '8px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
-              <img
-                src={URL.createObjectURL(imageFile)}
-                alt='Preview'
-                style={{
-                  width: '60px',
-                  height: '60px',
-                  objectFit: 'cover',
-                  borderRadius: '4px',
-                }}
-              />
-              <span style={{ fontSize: '14px', color: '#667781' }}>
-                {imageFile.name}
-              </span>
-              <button
-                type='button'
-                onClick={() => setImageFile(null)}
-                style={{
-                  background: '#ef4444',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: '24px',
-                  height: '24px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                }}
-              >
-                ×
-              </button>
-            </div>
-          )}
-
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder='Type a message'
-            disabled={disabled}
-            style={{
-              width: '100%',
-              padding: '9px 12px',
-              border: 'none',
-              borderRadius: '8px',
-              resize: 'none',
-              fontSize: '15px',
-              fontFamily: 'inherit',
-              outline: 'none',
-              minHeight: '42px',
-              maxHeight: '120px',
-              background: 'white',
-              opacity: disabled ? 0.5 : 1,
-            }}
-            rows={1}
-          />
-        </div>
-
-        {/* Send button */}
-        <button
-          type='submit'
-          disabled={disabled || (!message.trim() && !imageFile)}
-          style={{
-            background: '#25d366',
-            color: 'white',
-            border: 'none',
-            borderRadius: '50%',
-            width: '42px',
-            height: '42px',
-            cursor:
-              disabled || (!message.trim() && !imageFile)
-                ? 'not-allowed'
-                : 'pointer',
-            fontSize: '20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: disabled || (!message.trim() && !imageFile) ? 0.5 : 1,
-            transition: 'all 0.2s',
-          }}
-          title='Send'
-        >
-          ➤
-        </button>
-      </form>
-    </div>
+      <TextField
+        multiline
+        maxRows={5}
+        fullWidth
+        size={isMobile ? 'small' : 'medium'}
+        value={text}
+        placeholder={
+          filePreview ? `Send file: ${filePreview.name}` : 'Type a message'
+        }
+        onChange={(e) => handleTyping(e.target.value)}
+        sx={{
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 10,
+          },
+        }}
+        slotProps={{
+          input: {
+            startAdornment: (
+              <InputAdornment position='start'>
+                <IconButton
+                  size={isMobile ? 'small' : 'medium'}
+                  onClick={() => fileInputRef.current.click()}
+                >
+                  <AttachFileRounded color='disabled' />
+                </IconButton>
+              </InputAdornment>
+            ),
+            endAdornment:
+              text || filePreview ? (
+                <InputAdornment position='end'>
+                  <IconButton
+                    size={isMobile ? 'small' : 'medium'}
+                    onClick={sendMessage}
+                    sx={{
+                      backgroundColor: (theme) =>
+                        alpha(theme.palette.primary.light, 0.2),
+                      '&:hover': {
+                        backgroundColor: 'primary.main',
+                      },
+                    }}
+                  >
+                    <SendRounded color='primary' />
+                  </IconButton>
+                </InputAdornment>
+              ) : null,
+          },
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+          }
+        }}
+      />
+    </Box>
   );
-};
+}

@@ -1,6 +1,4 @@
 import AddIcon from '@mui/icons-material/Add';
-import { Alert, Fab, InputAdornment, useMediaQuery } from '@mui/material';
-
 import PeopleOutlineRounded from '@mui/icons-material/PeopleOutlineRounded';
 import {
   Button,
@@ -8,43 +6,36 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Fab,
+  InputAdornment,
   TextField,
+  useMediaQuery,
 } from '@mui/material';
 import { useState } from 'react';
 import { peerService } from '../../services/peerService';
 
-export function AddContactModal({ myProfile }) {
+export function AddContactButton({ myProfile }) {
   const isMobile = useMediaQuery('(max-width:768px)');
   const [open, setOpen] = useState(false);
   const [peerId, setPeerId] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   const handleAdd = async () => {
-    setError('');
-
-    if (!peerId.trim()) {
-      setError('Please enter a Peer ID');
-      return;
-    }
-
-    if (peerId === myProfile?.peerId) {
-      setError('You cannot add yourself as a contact');
-      return;
-    }
+    if (!peerId) return;
 
     setLoading(true);
 
     try {
-      // Send contact request with full profile
-      await peerService.sendContactRequest(peerId.trim(), myProfile);
+      console.log(myProfile, 'myProfile');
+
+      // Send contact request via PeerJS
+      await peerService.sendContactRequest(peerId, myProfile);
 
       setPeerId('');
       setOpen(false);
-      setError('');
     } catch (error) {
       console.error('Error sending contact request:', error);
-      setError(
+      alert(
         'Failed to send contact request. Please check the Peer ID and try again.',
       );
     } finally {
@@ -68,27 +59,13 @@ export function AddContactModal({ myProfile }) {
       <Dialog open={open} fullWidth onClose={() => !loading && setOpen(false)}>
         <DialogTitle>Add Contact</DialogTitle>
         <DialogContent>
-          {error && (
-            <Alert severity='error' sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
           <TextField
             fullWidth
             size={isMobile ? 'small' : 'medium'}
             placeholder='Enter Peer Id'
             value={peerId}
-            onChange={(e) => {
-              setPeerId(e.target.value);
-              setError('');
-            }}
+            onChange={(e) => setPeerId(e.target.value)}
             disabled={loading}
-            autoFocus
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                handleAdd();
-              }
-            }}
             sx={{
               mb: 1,
               px: 1,
@@ -108,21 +85,14 @@ export function AddContactModal({ myProfile }) {
           />
         </DialogContent>
         <DialogActions>
-          <Button
-            onClick={() => {
-              setOpen(false);
-              setError('');
-              setPeerId('');
-            }}
-            disabled={loading}
-          >
+          <Button onClick={() => setOpen(false)} disabled={loading}>
             Cancel
           </Button>
           <Button
             onClick={handleAdd}
             sx={{ borderRadius: 2 }}
             variant='contained'
-            disabled={loading || !peerId.trim()}
+            disabled={loading || !peerId}
           >
             {loading ? 'Sending...' : 'Send Request'}
           </Button>
