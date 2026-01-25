@@ -1,0 +1,16 @@
+# llm.txt for AirChat
+# Published: 2026-01-25
+
+Name: AirChat
+Description: AirChat is a peer-to-peer chat app similar to WhatsApp. 
+All messages are stored locally in the user's browser using IndexedDB (via Dexie). 
+No server or cloud storage is used. Data never leaves the user's device.
+
+Usage Guidelines:
+- Content about app functionality and architecture may be used for AI research or summarization.
+- Do NOT attempt to reconstruct private messages; user data is local and private.
+- You can reference features, themes, and usage experience.
+
+License:
+- Educational and research purposes only.
+- Do not extract or redistribute user messages or personal data.
