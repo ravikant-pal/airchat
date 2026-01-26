@@ -23,7 +23,6 @@ dayjs.extend(relativeTime);
 export function ChatHeader({ peerId, onBack }) {
   const isMobile = useMediaQuery('(max-width:768px)');
   const contact = useLiveQuery(() => db.contacts.get(peerId), [peerId]);
-  const typing = useLiveQuery(() => db.typing.get(peerId), [peerId]);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
 
@@ -107,7 +106,7 @@ export function ChatHeader({ peerId, onBack }) {
           {getConnectionIndicator()}
         </Box>
         <Typography variant='caption' color='text.secondary'>
-          {typing?.isTyping
+          {contact?.isTyping // Check typing from contacts table
             ? 'typing…'
             : contact?.online
               ? 'online'

@@ -96,35 +96,58 @@ export default function App({ toggleTheme, themeMode }) {
     };
   }, []);
 
-  // Auto-reconnect logic on mount
+  // Auto-reconnect logic on mount - CRITICAL for handling page reloads
   useEffect(() => {
     if (!myProfile?.peerId) return;
 
-    const startAutoReconnect = async () => {
+    // Wait for peer to initialize before attempting connections
+    const initTimeout = setTimeout(async () => {
+      console.log('=== AUTO-RECONNECT: Starting ===');
+
+      // FIXED: Use true (boolean) instead of 1 (number)
       const acceptedContacts = await db.contacts
-        .where('isAccepted')
-        .equals(1)
+        .filter((c) => c.isAccepted === true)
         .toArray();
 
+      console.log(
+        `Found ${acceptedContacts.length} accepted contacts to reconnect`,
+      );
+      console.log(
+        'Accepted contacts:',
+        acceptedContacts.map((c) => c.peerId),
+      );
+
       for (const contact of acceptedContacts) {
-        // Skip if already connected
-        if (peerService.connections.has(contact.peerId)) {
+        console.log(`Checking connection to ${contact.peerId}`);
+
+        // Always attempt to connect on page load
+        // The connections Map is EMPTY after reload, so we need to rebuild
+        if (!peerService.connections.has(contact.peerId)) {
+          console.log(
+            `No existing connection to ${contact.peerId}, reconnecting...`,
+          );
+
+          // Mark as connecting
+          await db.contacts.update(contact.peerId, {
+            connectionStatus: 'connecting',
+            online: false,
+          });
+
+          // Start reconnection attempts
+          attemptReconnect(contact);
+        } else {
+          console.log(`Already connected to ${contact.peerId}`);
           await db.contacts.update(contact.peerId, {
             connectionStatus: 'connected',
             online: true,
           });
-          continue;
         }
-
-        // Start reconnection attempts
-        attemptReconnect(contact);
       }
-    };
-
-    startAutoReconnect();
+    }, 1000); // Wait 1 second for peer to initialize
 
     // Cleanup timers on unmount
     return () => {
+      clearTimeout(initTimeout);
       retryTimers.current.forEach((timer) => clearTimeout(timer));
       retryTimers.current.clear();
     };
@@ -134,6 +157,127 @@ export default function App({ toggleTheme, themeMode }) {
     if (!myProfile?.peerId) return;
 
     peerService.init(myProfile.peerId);
+
+    // Register global message handlers (NOT dependent on ChatWindow being open)
+    peerService.onMessage(async (fromPeer, data) => {
+      console.log('App: Received message from', fromPeer, 'type:', data.type);
+
+      try {
+        if (data.type === 'message') {
+          // Check if message already exists
+          const existingMessage = await db.messages
+            .where('id')
+            .equals(data.id)
+            .first();
+
+          if (existingMessage) {
+            console.log('Message already exists, skipping:', data.id);
+            return;
+          }
+
+          // Determine initial status
+          // Only mark as 'seen' if this chat is currently open
+          let initialStatus = 'delivered';
+
+          // Check if the chat window is open for this peer
+          if (activePeer === fromPeer) {
+            // Additional check: is window focused (for desktop)?
+            if (!document.hidden) {
+              initialStatus = 'seen';
+            }
+          }
+
+          // Store the message
+          await db.messages.put({
+            peerId: fromPeer,
+            sender: 'peer',
+            content: data.text,
+            timestamp: data.timestamp || Date.now(),
+            status: initialStatus,
+            type: 'text',
+            id: data.id,
+          });
+
+          // Send appropriate status acknowledgment
+          peerService.send(fromPeer, {
+            type: 'status',
+            messageId: data.id,
+            status: initialStatus,
+          });
+        }
+
+        if (data.type === 'file') {
+          // Check if file message already exists
+          const existingMessage = await db.messages
+            .where('id')
+            .equals(data.id)
+            .first();
+
+          if (existingMessage) {
+            console.log('File message already exists, skipping:', data.id);
+            return;
+          }
+
+          // Determine initial status
+          let initialStatus = 'delivered';
+
+          if (activePeer === fromPeer && !document.hidden) {
+            initialStatus = 'seen';
+          }
+
+          // Store the file message
+          await db.messages.put({
+            peerId: fromPeer,
+            sender: 'peer',
+            content: data.fileName,
+            timestamp: data.timestamp || Date.now(),
+            status: initialStatus,
+            type: 'file',
+            file: data.fileBase64,
+            id: data.id,
+          });
+
+          // Send appropriate status acknowledgment
+          peerService.send(fromPeer, {
+            type: 'status',
+            messageId: data.id,
+            status: initialStatus,
+          });
+        }
+
+        if (data.type === 'typing') {
+          await db.typing.put({ peerId: fromPeer, isTyping: data.isTyping });
+        }
+      } catch (error) {
+        console.error('Error handling message:', error);
+      }
+    });
+
+    // Handle status updates
+    peerService.onStatus(async (fromPeer, data) => {
+      console.log(
+        'App: Status update from',
+        fromPeer,
+        data.messageId,
+        data.status,
+      );
+
+      try {
+        const updated = await db.messages
+          .where('id')
+          .equals(data.messageId)
+          .modify({ status: data.status });
+
+        if (updated === 0) {
+          console.warn(
+            'No message found to update status for:',
+            data.messageId,
+          );
+        }
+      } catch (error) {
+        console.error('Error updating message status:', error);
+      }
+    });
 
     peerService.onContactRequest((peerId, data) => {
       setPendingRequest({
@@ -198,7 +342,7 @@ export default function App({ toggleTheme, themeMode }) {
         retryTimers.current.set(peerId, timer);
       }
     });
-  }, [myProfile?.peerId]);
+  }, [myProfile?.peerId, activePeer]);
 
   const handleAcceptRequest = async (peerId) => {
     await peerService.acceptContactRequest(peerId, myProfile);

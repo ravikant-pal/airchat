@@ -73,6 +73,7 @@ export function ChatList({ onSelect, myProfile, toggleTheme, themeMode }) {
               lastSeen={c.lastSeen}
               connectionStatus={c.connectionStatus}
               isAccepted={c.isAccepted}
+              isTyping={c.isTyping} // Pass typing status
               onClick={() => onSelect(c.peerId)}
             />
           ))
@@ -92,13 +93,12 @@ export function ChatList({ onSelect, myProfile, toggleTheme, themeMode }) {
               <>
                 No chats yet.
                 <br />
-                Add a new contact to start chatting 💬
+                Add a new contact to start chatting💬
               </>
             )}
           </Box>
         )}
       </List>
-
       {myProfile && <AddContactButton myProfile={myProfile} />}
     </Box>
   );
