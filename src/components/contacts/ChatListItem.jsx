@@ -1,11 +1,11 @@
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
+import ErrorRoundedIcon from '@mui/icons-material/ErrorRounded';
+import PendingRoundedIcon from '@mui/icons-material/PendingRounded';
 import {
   Avatar,
   Badge,
   Box,
   Chip,
-  CircularProgress,
   ListItemAvatar,
   ListItemButton,
   ListItemText,
@@ -54,46 +54,21 @@ export function ChatListItem({
     }
   }, [avatarKey]);
 
-  const getStatusChip = () => {
+  const getStatusIcon = () => {
     if (isAccepted === false && connectionStatus === 'connecting') {
-      return (
-        <Chip
-          label='Pending'
-          size='small'
-          color='warning'
-          icon={<HourglassEmptyIcon />}
-          sx={{ height: 20, fontSize: '0.7rem' }}
-        />
-      );
+      return <AccessTimeRoundedIcon color='warning' fontSize='0.7rem' />;
     }
 
     if (isAccepted === true && connectionStatus === 'connecting') {
-      return (
-        <Chip
-          label='Connecting...'
-          size='small'
-          color='info'
-          icon={<CircularProgress size={12} />}
-          sx={{ height: 20, fontSize: '0.7rem' }}
-        />
-      );
+      return <PendingRoundedIcon color='info' fontSize='0.7rem' />;
     }
 
     if (connectionStatus === 'failed') {
-      return (
-        <Chip
-          label='Failed'
-          size='small'
-          color='error'
-          icon={<ErrorOutlineIcon />}
-          sx={{ height: 20, fontSize: '0.7rem' }}
-        />
-      );
+      return <ErrorRoundedIcon color='error' fontSize='0.7rem' />;
     }
 
     return null;
   };
-
   const formatLastSeen = (timestamp) => {
     if (!timestamp) return 'offline';
 
@@ -205,7 +180,7 @@ export function ChatListItem({
               <Typography variant='body1' component='span' noWrap>
                 {name}
               </Typography>
-              {getStatusChip()}
+              {getStatusIcon()}
             </Box>
             {lastMessage && (
               <Typography
