@@ -34,10 +34,16 @@ export default defineConfig({
             type: 'image/png',
           },
           {
-            src: '/icons/icon-512.png',
+            src: '/icons/icon-192-maskable.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/icons/icon-512-maskable.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'maskable',
           },
         ],
       },
