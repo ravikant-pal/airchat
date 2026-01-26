@@ -18,8 +18,8 @@ export default defineConfig({
         name: 'AirChat',
         short_name: 'AirChat',
         description: 'P2P Serverless chat app with dark and light themes',
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
+        theme_color: '#25d366',
+        background_color: '#25d366',
         display: 'standalone',
         start_url: '/airchat/',
         icons: [
