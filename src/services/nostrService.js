@@ -27,24 +27,24 @@ import { db } from './db';
 const RELAYS = [
   'wss://relay.damus.io',
   'wss://nos.lol',
-  'wss://relay.primal.net',
-  'wss://relay.snort.social',
-  'wss://nostr.pub',
-  'wss://relay.nostr.band',
-  'wss://relay.noswhere.com',
-  'wss://search.nos.today',
-  'wss://nostr.oxtr.dev',
-  'wss://relay.orangepill.dev',
+  // 'wss://relay.primal.net',
+  // 'wss://relay.snort.social',
+  // 'wss://nostr.pub',
+  // 'wss://relay.nostr.band',
+  // 'wss://relay.noswhere.com',
+  // 'wss://search.nos.today',
+  // 'wss://nostr.oxtr.dev',
+  // 'wss://relay.orangepill.dev',
 ];
 
 // Google STUN — free, no account needed, handles NAT traversal
 const STUN = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun3.l.google.com:19302' },
-  { urls: 'stun:stun4.l.google.com:19302' },
-  { urls: 'stun:stun.services.mozilla.com' },
+  // { urls: 'stun:stun2.l.google.com:19302' },
+  // { urls: 'stun:stun3.l.google.com:19302' },
+  // { urls: 'stun:stun4.l.google.com:19302' },
+  // { urls: 'stun:stun.services.mozilla.com' },
 ];
 
 const bytesToHex = (b) =>
