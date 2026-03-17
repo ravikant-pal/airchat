@@ -13,7 +13,7 @@ import {
 import { useRef, useState } from 'react';
 import { v4 as uuid } from 'uuid';
 import { db } from '../../services/db';
-import { peerService } from '../../services/peerService';
+import { nostrService as peerService } from '../../services/nostrService';
 
 export function ChatInput({ peerId }) {
   const isMobile = useMediaQuery('(max-width:768px)');

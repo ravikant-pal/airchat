@@ -5,7 +5,7 @@ import { ChatList } from '../components/contacts/ChatList';
 
 import { ContactRequestDialog } from '../components/modals/ContactRequestDialog';
 import { db } from '../services/db';
-import { peerService } from '../services/peerService';
+import { nostrService as peerService } from '../services/nostrService';
 import AppShell from './AppShell';
 
 export default function App({ toggleTheme, themeMode }) {
@@ -38,7 +38,7 @@ export default function App({ toggleTheme, themeMode }) {
     });
 
     console.log(
-      `Attempting to reconnect to ${peerId} (attempt ${currentAttempts + 1}/${MAX_RETRIES})`,
+      `Attempting to reconnect to ${peerId} (attempt ${currentAttempts + 1}/${MAX_RETRIES})`
     );
 
     try {
@@ -110,11 +110,11 @@ export default function App({ toggleTheme, themeMode }) {
         .toArray();
 
       console.log(
-        `Found ${acceptedContacts.length} accepted contacts to reconnect`,
+        `Found ${acceptedContacts.length} accepted contacts to reconnect`
       );
       console.log(
         'Accepted contacts:',
-        acceptedContacts.map((c) => c.peerId),
+        acceptedContacts.map((c) => c.peerId)
       );
 
       for (const contact of acceptedContacts) {
@@ -124,7 +124,7 @@ export default function App({ toggleTheme, themeMode }) {
         // The connections Map is EMPTY after reload, so we need to rebuild
         if (!peerService.connections.has(contact.peerId)) {
           console.log(
-            `No existing connection to ${contact.peerId}, reconnecting...`,
+            `No existing connection to ${contact.peerId}, reconnecting...`
           );
 
           // Mark as connecting
@@ -259,7 +259,7 @@ export default function App({ toggleTheme, themeMode }) {
         'App: Status update from',
         fromPeer,
         data.messageId,
-        data.status,
+        data.status
       );
 
       try {
@@ -271,7 +271,7 @@ export default function App({ toggleTheme, themeMode }) {
         if (updated === 0) {
           console.warn(
             'No message found to update status for:',
-            data.messageId,
+            data.messageId
           );
         }
       } catch (error) {

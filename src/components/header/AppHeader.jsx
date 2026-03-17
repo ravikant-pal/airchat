@@ -21,20 +21,23 @@ export function AppHeader({ search, onSearch, toggleTheme, themeMode }) {
   const [openProfile, setOpenProfile] = useState(false);
   const { isFullscreen, toggleFullscreen } = useFullscreen();
 
+  const isDark = themeMode === 'dark';
+
   return (
     <AppBar position='sticky'>
       <Toolbar>
         <Typography flex={1} fontSize={24} fontWeight={600}>
           AirChat
         </Typography>
-        <IconButton onClick={() => setOpenProfile(true)}>
+        <IconButton
+          onClick={() => setOpenProfile(true)}
+          sx={{ color: 'inherit' }}
+        >
           <SettingsIcon />
         </IconButton>
-        <Tooltip
-          title={`Switch to ${themeMode === 'dark' ? 'light' : 'dark'} mode`}
-        >
-          <IconButton onClick={toggleTheme}>
-            {themeMode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
+        <Tooltip title={`Switch to ${isDark ? 'light' : 'dark'} mode`}>
+          <IconButton onClick={toggleTheme} sx={{ color: 'inherit' }}>
+            {isDark ? <LightModeIcon /> : <DarkModeIcon />}
           </IconButton>
         </Tooltip>
         <Tooltip title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}>
@@ -49,30 +52,57 @@ export function AppHeader({ search, onSearch, toggleTheme, themeMode }) {
           </IconButton>
         </Tooltip>
       </Toolbar>
+
       <TextField
         placeholder='Search contacts'
         variant='outlined'
         size='small'
         fullWidth
         value={search}
+        onChange={onSearch}
         sx={{
           mb: 1,
           px: 1,
+          // In light mode the AppBar is the primary color (green).
+          // Force white text/border/icon so it's readable on that background.
+          // In dark mode the AppBar is already dark — keep normal styling.
           '& .MuiOutlinedInput-root': {
             borderRadius: 5,
+            color: isDark ? 'text.primary' : 'white',
+            '& fieldset': {
+              borderColor: isDark
+                ? 'rgba(255,255,255,0.2)'
+                : 'rgba(255,255,255,0.5)',
+            },
+            '&:hover fieldset': {
+              borderColor: isDark
+                ? 'rgba(255,255,255,0.4)'
+                : 'rgba(255,255,255,0.8)',
+            },
+            '&.Mui-focused fieldset': {
+              borderColor: 'white',
+            },
+          },
+          '& .MuiInputBase-input::placeholder': {
+            color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.75)',
+            opacity: 1,
           },
         }}
         slotProps={{
           input: {
             startAdornment: (
               <InputAdornment position='start'>
-                <SearchRounded color='primary' />
+                <SearchRounded
+                  sx={{
+                    color: isDark ? 'primary.main' : 'rgba(255,255,255,0.85)',
+                  }}
+                />
               </InputAdornment>
             ),
           },
         }}
-        onChange={onSearch}
       />
+
       <ProfileDialog open={openProfile} setOpen={setOpenProfile} />
     </AppBar>
   );

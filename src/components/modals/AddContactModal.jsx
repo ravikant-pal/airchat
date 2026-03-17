@@ -1,73 +1,71 @@
-import { Alert, InputAdornment, useMediaQuery } from '@mui/material';
-
 import AlternateEmailRounded from '@mui/icons-material/AlternateEmailRounded';
 import {
+  Alert,
   Button,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  InputAdornment,
   TextField,
+  useMediaQuery,
 } from '@mui/material';
 import { useState } from 'react';
-import { peerService } from '../../services/peerService';
+import { nostrService as peerService } from '../../services/nostrService';
 
-const USERNAME_REGEX = /^[a-z0-9_]+$/;
+// Nostr pubkeys are 64-char lowercase hex strings
+const PUBKEY_REGEX = /^[0-9a-f]{64}$/;
 
 export function AddContactModal({ myProfile, open, setOpen }) {
   const isMobile = useMediaQuery('(max-width:768px)');
-  // const [open, setOpen] = useState(false);
   const [peerId, setPeerId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleUsernameChange = (e) => {
-    const value = e.target.value.replace('@', '');
+  const validate = (value) => {
+    if (!value) return '';
+    if (!PUBKEY_REGEX.test(value))
+      return 'Enter a valid Nostr public key (64-character hex)';
+    if (value === myProfile?.peerId) return 'You cannot add yourself';
+    return '';
+  };
 
-    if (!USERNAME_REGEX.test(value)) {
-      setError('Only lowercase letters, numbers, and underscores');
-    } else {
-      setError('');
-    }
+  const handleChange = (e) => {
+    const value = e.target.value.trim().toLowerCase();
     setPeerId(value);
+    setError(validate(value));
   };
 
   const handleAdd = async () => {
-    setError('');
-
-    if (!peerId.trim()) {
-      setError('Please enter a Peer ID');
-      return;
-    }
-
-    if (peerId === myProfile?.peerId) {
-      setError('You cannot add yourself as a contact');
+    const err = validate(peerId);
+    if (err) {
+      setError(err);
       return;
     }
 
     setLoading(true);
-
     try {
-      console.log(myProfile, 'myProfile');
-
-      // Send contact request via PeerJS
       await peerService.sendContactRequest(peerId, myProfile);
-
       setPeerId('');
       setOpen(false);
       setError('');
-    } catch (error) {
-      console.error('Error sending contact request:', error);
-      alert(
-        'Failed to send contact request. Please check the Peer ID and try again.',
-      );
+    } catch (e) {
+      console.error('Error sending contact request:', e);
+      setError('Failed to send request. Check the key and try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleClose = () => {
+    if (loading) return;
+    setPeerId('');
+    setError('');
+    setOpen(false);
+  };
+
   return (
-    <Dialog open={open} fullWidth onClose={() => !loading && setOpen(false)}>
+    <Dialog open={open} fullWidth onClose={handleClose}>
       <DialogTitle>Add Contact</DialogTitle>
       <DialogContent>
         {error && (
@@ -78,13 +76,15 @@ export function AddContactModal({ myProfile, open, setOpen }) {
         <TextField
           fullWidth
           size={isMobile ? 'small' : 'medium'}
-          placeholder='Enter @username'
+          placeholder='Paste Nostr public key (npub or hex)'
           value={peerId}
-          onChange={handleUsernameChange}
+          onChange={handleChange}
           disabled={loading}
           autoFocus
+          multiline
+          maxRows={3}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               handleAdd();
             }
@@ -92,9 +92,7 @@ export function AddContactModal({ myProfile, open, setOpen }) {
           sx={{
             mb: 1,
             px: 1,
-            '& .MuiOutlinedInput-root': {
-              borderRadius: 10,
-            },
+            '& .MuiOutlinedInput-root': { borderRadius: 4 },
           }}
           slotProps={{
             input: {
@@ -105,24 +103,22 @@ export function AddContactModal({ myProfile, open, setOpen }) {
               ),
             },
           }}
+          helperText={
+            peerId && !error
+              ? '✓ Valid public key'
+              : 'Ask the other person to share their public key from their profile'
+          }
         />
       </DialogContent>
       <DialogActions>
-        <Button
-          onClick={() => {
-            setOpen(false);
-            setError('');
-            setPeerId('');
-          }}
-          disabled={loading}
-        >
+        <Button onClick={handleClose} disabled={loading}>
           Cancel
         </Button>
         <Button
           onClick={handleAdd}
           sx={{ borderRadius: 2 }}
           variant='contained'
-          disabled={loading || !peerId.trim()}
+          disabled={loading || !peerId.trim() || !!error}
         >
           {loading ? 'Sending...' : 'Send Request'}
         </Button>

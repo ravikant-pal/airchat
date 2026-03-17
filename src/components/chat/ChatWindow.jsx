@@ -1,7 +1,7 @@
 import { Box, Typography, useMediaQuery } from '@mui/material';
 import { useEffect } from 'react';
 import { db } from '../../services/db';
-import { peerService } from '../../services/peerService';
+import { nostrService as peerService } from '../../services/nostrService';
 import { ChatHeader } from './ChatHeader';
 import { ChatInput } from './ChatInput';
 import { MessageList } from './MessageList';
