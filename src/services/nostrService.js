@@ -24,11 +24,13 @@ import { db } from './db';
 
 // Free public Nostr relays — only used for signaling handshake + offline fallback
 // Your actual chat data goes over direct WebRTC after handshake
-// Most reliable public Nostr relays as of 2025
-// Keeping only 2 — more relays = more noise, not more reliability
 const RELAYS = [
-  'wss://relay.damus.io', // most reliable, operated by Damus team
-  'wss://relay.primal.net', // Primal's relay, high uptime
+  'wss://relay.damus.io',
+  'wss://relay.primal.net',
+  'wss://relay.snort.social',
+  'wss://nos.lol',
+  'wss://nostr.pub',
+  'wss://relay.nostr.band',
 ];
 
 // Google STUN — free, no account needed, handles NAT traversal
@@ -58,10 +60,7 @@ class NostrService {
   dataChannels = new Map(); // pubkey → RTCDataChannel
   heartbeatIntervals = new Map();
   processedEventIds = new Set(); // deduplicate replayed Nostr events
-  initTime = Math.floor(Date.now() / 1000);
-  pendingConnections = new Set(); // prevents duplicate _initiateWebRTC for same peer
-  _relayReadyResolve = null;
-  relayReady = null; // Promise — resolves when ≥1 Nostr relay is actually connected
+  initTime = Math.floor(Date.now() / 1000); // unix seconds — ignore events older than this for handshakes
 
   onMessageCallback = null;
   onStatusCallback = null;
@@ -111,45 +110,17 @@ class NostrService {
     }
 
     // NDK without cache adapter — avoids NDKCacheDexie's iterable bug
+    // NDK works fine without it; Nostr events are fetched fresh from relays
     this.ndk = new NDK({
       explicitRelayUrls: RELAYS,
       signer: new NDKPrivateKeySigner(privKeyHex),
     });
 
-    // relayReady resolves the FIRST time any relay actually connects.
-    // _initiateWebRTC waits for this before sending offers — otherwise
-    // the offer DM goes nowhere because no relay is connected yet.
-    this.relayReady = new Promise((resolve) => {
-      this._relayReadyResolve = resolve;
-    });
+    await this.ndk.connect();
+    console.log('Nostr connected | pubkey:', pubKeyHex.slice(0, 12) + '…');
 
-    this.ndk.pool.on('relay:connect', (relay) => {
-      console.log('[nostr] relay connected:', relay.url);
-      if (this._relayReadyResolve) {
-        this._relayReadyResolve();
-        this._relayReadyResolve = null; // only resolve once
-      }
-    });
-
-    // Start connecting — non-blocking, relay:connect fires when ready
-    this.ndk.connect();
-
-    // Subscribe immediately (NDK queues subscription until relay connects)
+    // Listen for incoming encrypted DMs addressed to us
     this._subscribe();
-
-    // Timeout safety — if no relay connects in 15s, unblock with a warning
-    // so the app doesn't freeze. Messages will fail but app stays usable.
-    setTimeout(() => {
-      if (this._relayReadyResolve) {
-        console.warn(
-          '[nostr] no relay connected after 15s — proceeding anyway'
-        );
-        this._relayReadyResolve();
-        this._relayReadyResolve = null;
-      }
-    }, 15000);
-
-    console.log('Nostr init | pubkey:', pubKeyHex.slice(0, 12) + '…');
   }
 
   _subscribe() {
@@ -216,6 +187,8 @@ class NostrService {
 
   // Send an encrypted Nostr DM — used for signaling + offline message fallback
   async _sendDM(toPubKey, content) {
+    // Wait for relay before publishing — critical on slow mobile connections
+    await this.relayReady;
     const recipient = new NDKUser({ pubkey: toPubKey });
     const encrypted = await this.ndk.signer.encrypt(
       recipient,
@@ -349,60 +322,24 @@ class NostrService {
   // ─── WebRTC ───────────────────────────────────────────────────────────────
 
   async _initiateWebRTC(peerId) {
-    // Guard 1: already connected — nothing to do
-    if (this.isConnected(peerId)) {
-      console.log(
-        `[webrtc] already connected to ${peerId.slice(0, 8)}, skipping`
-      );
-      return;
-    }
+    const pc = this._createPC(peerId);
 
-    // Guard 2: already initiating for this peer — don't create a second PC
-    if (this.pendingConnections.has(peerId)) {
-      console.log(
-        `[webrtc] initiation already in progress for ${peerId.slice(0, 8)}, skipping`
-      );
-      return;
-    }
+    // Create data channel before offer (required by WebRTC spec)
+    const dc = pc.createDataChannel('chat');
+    this._wireDataChannel(peerId, dc);
+    this.dataChannels.set(peerId, dc);
 
-    this.pendingConnections.add(peerId);
-    try {
-      // Wait for at least one Nostr relay to be connected before sending offer.
-      // Without this, the offer DM goes nowhere if called right after init().
-      await this.relayReady;
+    // Create offer, wait for ALL ICE candidates (non-trickle — simpler)
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await this._waitForICE(pc); // wait for Google STUN to gather candidates
 
-      // Re-check after relay wait — peer may have connected while we waited
-      if (this.isConnected(peerId)) {
-        console.log(
-          `[webrtc] ${peerId.slice(0, 8)} connected while waiting for relay`
-        );
-        return;
-      }
-
-      const pc = this._createPC(peerId);
-      const dc = pc.createDataChannel('chat');
-      this._wireDataChannel(peerId, dc);
-      this.dataChannels.set(peerId, dc);
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await this._waitForICE(pc);
-
-      await this._sendDM(peerId, {
-        type: 'webrtc_offer',
-        sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp },
-      });
-      console.log(`[webrtc] offer sent to ${peerId.slice(0, 8)}`);
-    } catch (err) {
-      console.error(
-        `[webrtc] _initiateWebRTC failed for ${peerId.slice(0, 8)}:`,
-        err
-      );
-      this._teardown(peerId);
-      throw err; // let App.jsx retry logic handle it
-    } finally {
-      this.pendingConnections.delete(peerId);
-    }
+    // Send complete offer (with ICE candidates baked in) via Nostr
+    await this._sendDM(peerId, {
+      type: 'webrtc_offer',
+      sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp },
+    });
+    console.log(`[webrtc] offer sent to ${peerId.slice(0, 8)}`);
   }
 
   async _onWebRTCOffer(fromPubKey, content) {

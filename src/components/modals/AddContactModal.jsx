@@ -44,14 +44,23 @@ export function AddContactModal({ myProfile, open, setOpen }) {
     }
 
     setLoading(true);
+    setError('');
     try {
       await peerService.sendContactRequest(peerId, myProfile);
       setPeerId('');
       setOpen(false);
-      setError('');
     } catch (e) {
       console.error('Error sending contact request:', e);
-      setError('Failed to send request. Check the key and try again.');
+      // Give a specific message depending on what went wrong
+      if (e?.message?.includes('relay') || e?.message?.includes('publish')) {
+        setError(
+          'Could not reach relay. Check your internet connection and try again.'
+        );
+      } else {
+        setError(
+          'Failed to send request. Make sure the key is correct and you are online.'
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -120,7 +129,7 @@ export function AddContactModal({ myProfile, open, setOpen }) {
           variant='contained'
           disabled={loading || !peerId.trim() || !!error}
         >
-          {loading ? 'Sending...' : 'Send Request'}
+          {loading ? 'Connecting…' : 'Send Request'}
         </Button>
       </DialogActions>
     </Dialog>

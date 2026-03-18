@@ -29,6 +29,12 @@ export function AppHeader({ search, onSearch, toggleTheme, themeMode }) {
         <Typography flex={1} fontSize={24} fontWeight={600}>
           AirChat
         </Typography>
+        {/* <IconButton
+          onClick={() => setOpenProfile(true)}
+          sx={{ color: 'inherit' }}
+        >
+          <PhonelinkEraseRounded />
+        </IconButton> */}
         <IconButton
           onClick={() => setOpenProfile(true)}
           sx={{ color: 'inherit' }}
