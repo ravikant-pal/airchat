@@ -48,49 +48,41 @@ export function ChatInput({ peerId }) {
 
     const messageId = uuid();
     const timestamp = Date.now();
-
-    // Check if peer is online
     const isConnected = peerService.isConnected(peerId);
 
     try {
       if (text.trim()) {
-        // Store message locally first
+        // Store locally first — always
         await db.messages.add({
           peerId,
           sender: 'me',
           content: text,
           timestamp,
-          status: isConnected ? 'sent' : 'created', // 'created' if offline
+          status: 'created',
           type: 'text',
           id: messageId,
         });
 
-        // Try to send immediately if connected
-        if (isConnected) {
-          console.log('Sending message to peer...');
+        // Always call send() regardless of connection state.
+        // send() internally routes:
+        //   WebRTC open  → DataChannel (fast, direct)
+        //   WebRTC closed → Nostr DM relay (stored until peer subscribes)
+        // This ensures B's messages reach the relay even when A is offline,
+        // so A receives them when A comes back — even if B is offline by then.
+        const sent = await peerService.send(peerId, {
+          type: 'message',
+          id: messageId,
+          text,
+          timestamp,
+        });
 
-          const sent = await peerService.send(peerId, {
-            type: 'message',
-            id: messageId,
-            text: text,
-            timestamp,
+        if (sent) {
+          await db.messages.update(messageId, {
+            status: isConnected ? 'sent' : 'sent',
           });
-
-          if (!sent) {
-            // Failed to send, update status
-            await db.messages.update(messageId, { status: 'created' });
-            setShowOfflineWarning(true);
-          }
         } else {
-          // Not connected, show warning
+          // send() returned false — typing/ping types only, won't happen for messages
           setShowOfflineWarning(true);
-
-          // Update contact status
-          await db.contacts.update(peerId, {
-            online: false,
-            connectionStatus: 'disconnected',
-            lastSeen: Date.now(),
-          });
         }
       }
 
@@ -98,35 +90,28 @@ export function ChatInput({ peerId }) {
         const { name, type, base64 } = filePreview;
         const fileMessageId = uuid();
 
-        // Store file message locally
         await db.messages.add({
           peerId,
           sender: 'me',
           content: name,
           timestamp,
-          status: isConnected ? 'sent' : 'created',
+          status: 'created',
           type: 'file',
           file: base64,
           fileType: type,
           id: fileMessageId,
         });
 
-        // Try to send immediately if connected
-        if (isConnected) {
-          const sent = await peerService.send(peerId, {
-            type: 'file',
-            id: fileMessageId,
-            fileName: name,
-            fileType: type,
-            fileBase64: base64,
-            timestamp,
-          });
+        const sent = await peerService.send(peerId, {
+          type: 'file',
+          id: fileMessageId,
+          fileName: name,
+          fileType: type,
+          fileBase64: base64,
+          timestamp,
+        });
 
-          if (!sent) {
-            await db.messages.update(fileMessageId, { status: 'created' });
-            setShowOfflineWarning(true);
-          }
-        } else {
+        if (!sent) {
           setShowOfflineWarning(true);
         }
 
@@ -230,10 +215,11 @@ export function ChatInput({ peerId }) {
       >
         <Alert
           onClose={() => setShowOfflineWarning(false)}
-          severity='warning'
+          severity='info'
           sx={{ width: '100%' }}
         >
-          User is offline.
+          Peer offline — message queued via relay, will deliver when they
+          reconnect.
         </Alert>
       </Snackbar>
     </>

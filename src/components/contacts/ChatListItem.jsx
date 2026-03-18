@@ -48,6 +48,12 @@ export function ChatListItem({
     return count;
   }, [peerId]);
 
+  const getStatusBadgeColor = () => {
+    if (connectionStatus === 'connecting') return 'warning';
+    if (connectionStatus === 'connected') return 'success';
+    return 'default';
+  };
+
   useEffect(() => {
     if (avatarKey) {
       getAvatarFromCache(avatarKey).then(setAvatarUrl);
@@ -161,8 +167,7 @@ export function ChatListItem({
           overlap='circular'
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           variant='dot'
-          color='success'
-          invisible={!online}
+          color={getStatusBadgeColor()}
         >
           <Avatar src={avatarUrl}>{name?.[0]?.toUpperCase()}</Avatar>
         </Badge>
@@ -180,7 +185,6 @@ export function ChatListItem({
               <Typography variant='body1' component='span' noWrap>
                 {name}
               </Typography>
-              {getStatusIcon()}
             </Box>
             {lastMessage && (
               <Typography
@@ -189,7 +193,7 @@ export function ChatListItem({
                 component='span'
                 sx={{ ml: 1, fontSize: '0.7rem' }}
               >
-                {formatMessageTime(lastMessage.timestamp)}
+                {new Date(lastMessage.timestamp).toLocaleTimeString()}
               </Typography>
             )}
           </Box>
@@ -208,14 +212,7 @@ export function ChatListItem({
               noWrap
               sx={{ flex: 1, fontSize: '0.875rem' }}
             >
-              {lastMessage ? (
-                getLastMessagePreview()
-              ) : (
-                <>
-                  {username && `@${username} • `}
-                  {online ? 'online' : formatLastSeen(lastSeen)}
-                </>
-              )}
+              {lastMessage ? lastMessage.content : 'No messages yet'}
             </Typography>
             {unreadCount > 0 && (
               <Chip

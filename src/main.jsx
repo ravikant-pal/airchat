@@ -1,11 +1,12 @@
 import { CssBaseline, ThemeProvider } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './app/App';
 import { darkTheme, lightTheme } from './theme/theme';
 
 import { registerSW } from 'virtual:pwa-register';
 import { FullscreenProvider } from './contexts/FullscreenProvider';
+import { NostrProvider } from './contexts/NostrProvider';
 
 registerSW({ immediate: true });
 
@@ -33,7 +34,11 @@ function Root() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <FullscreenProvider>
-        <App toggleTheme={toggleTheme} themeMode={mode} />
+        <NostrProvider>
+          <Suspense fallback={null}>
+            <App toggleTheme={toggleTheme} themeMode={mode} />
+          </Suspense>
+        </NostrProvider>
       </FullscreenProvider>
     </ThemeProvider>
   );

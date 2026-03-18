@@ -1,11 +1,9 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import SignalWifiOffIcon from '@mui/icons-material/SignalWifiOff';
 import {
   Avatar,
+  Badge,
   Box,
-  Chip,
-  CircularProgress,
   IconButton,
   Tooltip,
   Typography,
@@ -48,36 +46,27 @@ export function ChatHeader({ peerId, onBack }) {
     }
   };
 
-  const getConnectionIndicator = () => {
-    if (contact?.connectionStatus === 'connecting' || isReconnecting) {
-      return (
-        <Chip
-          label='Connecting...'
-          size='small'
-          color='info'
-          icon={<CircularProgress size={12} sx={{ color: 'inherit' }} />}
-          sx={{ height: 22, fontSize: '0.7rem' }}
-        />
-      );
-    }
-
-    if (
-      contact?.connectionStatus === 'failed' ||
-      (!contact?.online && contact?.connectionStatus === 'disconnected')
-    ) {
-      return (
-        <Chip
-          label='Offline'
-          size='small'
-          color='error'
-          icon={<SignalWifiOffIcon sx={{ fontSize: 14 }} />}
-          sx={{ height: 22, fontSize: '0.7rem' }}
-        />
-      );
-    }
-
-    return null;
+  const getStatusBadgeColor = () => {
+    if (contact?.connectionStatus === 'connecting') return 'warning';
+    if (contact?.connectionStatus === 'connected') return 'success';
+    return 'default';
   };
+
+  useEffect(() => {
+    if (isReconnecting) {
+      const reconnectInterval = setInterval(async () => {
+        try {
+          await window.manualReconnect(peerId);
+          clearInterval(reconnectInterval);
+          setIsReconnecting(false);
+        } catch (error) {
+          console.error('Reconnection attempt failed:', error);
+        }
+      }, 5000); // Retry every 5 seconds
+
+      return () => clearInterval(reconnectInterval);
+    }
+  }, [isReconnecting, peerId]);
 
   const showReconnectButton =
     contact?.connectionStatus === 'failed' ||
@@ -97,13 +86,18 @@ export function ChatHeader({ peerId, onBack }) {
           <ArrowBackIcon sx={{ color: '#fff' }} />
         </IconButton>
       )}
-
-      <Avatar src={avatarUrl}>{contact?.name?.[0]?.toUpperCase()}</Avatar>
+      <Badge
+        overlap='circular'
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        variant='dot'
+        color={getStatusBadgeColor()}
+      >
+        <Avatar src={avatarUrl}>{contact?.name?.[0]?.toUpperCase()}</Avatar>
+      </Badge>
 
       <Box flex={1}>
         <Box display='flex' alignItems='center' gap={1}>
           <Typography fontWeight={500}>{contact?.name || peerId}</Typography>
-          {getConnectionIndicator()}
         </Box>
         <Typography variant='caption' color='text.secondary'>
           {contact?.isTyping // Check typing from contacts table
