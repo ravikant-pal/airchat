@@ -24,14 +24,7 @@ import { db } from './db';
 
 // Free public Nostr relays — only used for signaling handshake + offline fallback
 // Your actual chat data goes over direct WebRTC after handshake
-const RELAYS = [
-  'wss://relay.damus.io',
-  'wss://relay.primal.net',
-  'wss://relay.snort.social',
-  'wss://nos.lol',
-  'wss://nostr.pub',
-  'wss://relay.nostr.band',
-];
+const RELAYS = ['wss://relay.damus.io', 'wss://relay.primal.net'];
 
 // Google STUN — free, no account needed, handles NAT traversal
 const STUN = [
