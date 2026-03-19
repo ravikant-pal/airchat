@@ -33,7 +33,10 @@ export async function registerPushNotifications(nostrPubkey) {
     }
 
     // 3. Register service worker
-    const reg = await navigator.serviceWorker.register('/sw.js');
+    // Use import.meta.env.BASE_URL so it works on any base path
+    // e.g. /airchat/sw.js on GitHub Pages, /sw.js on root deployments
+    const swUrl = `${import.meta.env.BASE_URL}sw.js`;
+    const reg = await navigator.serviceWorker.register(swUrl);
     await navigator.serviceWorker.ready;
 
     // 4. Get VAPID public key from push server
