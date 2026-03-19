@@ -1,15 +1,3 @@
-/**
- * NostrContext.jsx
- *
- * Single source of truth for all peer/nostr state.
- * Wrap your app in <NostrProvider> once — nostrService.init() is called
- * exactly once per page load, never on navigation.
- *
- * Usage:
- *   const { activePeer, setActivePeer, pendingRequest,
- *           handleAcceptRequest, handleRejectRequest } = useNostr()
- */
-
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   createContext,
@@ -21,28 +9,45 @@ import {
 } from 'react';
 import { db } from '../services/db';
 import { nostrService } from '../services/nostrService';
+import { registerPushNotifications } from '../services/notificationService';
 
 const NostrContext = createContext(null);
+
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied') return false;
+  const result = await Notification.requestPermission();
+  return result === 'granted';
+}
+
+function fireNotification(title, body, tag) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  if (!document.hidden) return;
+  new Notification(title, {
+    body,
+    icon: '/airchat/web-app-manifest-192x192.png',
+    badge: '/airchat/favicon-96x96.png',
+    tag,
+    renotify: true,
+  });
+}
 
 export function NostrProvider({ children }) {
   const [activePeer, setActivePeer] = useState(null);
   const [pendingRequest, setPendingRequest] = useState(null);
 
-  // Ref mirrors activePeer so event callbacks always read the current value
-  // without being recreated (which would re-run init)
   const activePeerRef = useRef(null);
   const retryTimers = useRef(new Map());
   const retryAttempts = useRef(new Map());
-  const isInitialized = useRef(false); // hard guard — init() runs exactly once
+  const isInitialized = useRef(false);
 
   const myProfile = useLiveQuery(() => db.profile.toCollection().first());
 
-  // Keep ref in sync on every render
   useEffect(() => {
     activePeerRef.current = activePeer;
   }, [activePeer]);
-
-  // ─── Reconnect helpers ────────────────────────────────────────────────────
 
   const attemptReconnect = useCallback(async (contact) => {
     const peerId = contact.peerId;
@@ -85,28 +90,36 @@ export function NostrProvider({ children }) {
     }
   }, []);
 
-  // ─── One-time init ────────────────────────────────────────────────────────
+  // Expose setActivePeer so sw message handler in App.jsx can call it
+  // We store it on nostrService just as a side-channel — clean alternative
+  // is to lift state but that would require bigger refactor
+  const setActivePeerRef = useRef(null);
+  useEffect(() => {
+    setActivePeerRef.current = setActivePeer;
+  }, [setActivePeer]);
 
   useEffect(() => {
     if (!myProfile?.peerId) return;
-    if (isInitialized.current) return; // already running — skip on re-renders
+    if (isInitialized.current) return;
     isInitialized.current = true;
 
-    // ── 1. Init nostrService (connects to relays, starts subscription) ──────
+    // ── 1. Init nostrService ──────────────────────────────────────────────
     nostrService.init(myProfile.peerId);
 
-    // ── 2. Register all event callbacks ──────────────────────────────────────
+    // ── 2. Request permission + register Web Push ─────────────────────────
+    requestNotificationPermission().then((granted) => {
+      if (granted) registerPushNotifications(myProfile.peerId);
+    });
 
+    // ── 3. Message + file handler ─────────────────────────────────────────
     nostrService.onMessage(async (fromPeer, data) => {
       try {
         if (data.type === 'message') {
           const exists = await db.messages.where('id').equals(data.id).first();
           if (exists) return;
 
-          const status =
-            activePeerRef.current === fromPeer && !document.hidden
-              ? 'seen'
-              : 'delivered';
+          const isOpen = activePeerRef.current === fromPeer && !document.hidden;
+          const status = isOpen ? 'seen' : 'delivered';
 
           await db.messages.put({
             id: data.id,
@@ -122,16 +135,24 @@ export function NostrProvider({ children }) {
             messageId: data.id,
             status,
           });
+
+          if (!isOpen) {
+            const contact = await db.contacts.get(fromPeer);
+            const name = contact?.name || 'Someone';
+            fireNotification(
+              'AirChat',
+              `${name}: ${data.text?.slice(0, 60)}`,
+              fromPeer
+            );
+          }
         }
 
         if (data.type === 'file') {
           const exists = await db.messages.where('id').equals(data.id).first();
           if (exists) return;
 
-          const status =
-            activePeerRef.current === fromPeer && !document.hidden
-              ? 'seen'
-              : 'delivered';
+          const isOpen = activePeerRef.current === fromPeer && !document.hidden;
+          const status = isOpen ? 'seen' : 'delivered';
 
           await db.messages.put({
             id: data.id,
@@ -148,6 +169,16 @@ export function NostrProvider({ children }) {
             messageId: data.id,
             status,
           });
+
+          if (!isOpen) {
+            const contact = await db.contacts.get(fromPeer);
+            const name = contact?.name || 'Someone';
+            fireNotification(
+              'AirChat',
+              `${name} sent a file: ${data.fileName}`,
+              fromPeer
+            );
+          }
         }
 
         if (data.type === 'typing') {
@@ -158,6 +189,7 @@ export function NostrProvider({ children }) {
       }
     });
 
+    // ── 4. Status handler ─────────────────────────────────────────────────
     nostrService.onStatus(async (fromPeer, data) => {
       try {
         await db.messages
@@ -169,17 +201,23 @@ export function NostrProvider({ children }) {
       }
     });
 
+    // ── 5. Contact request handler ────────────────────────────────────────
     nostrService.onContactRequest((peerId, data) => {
-      setPendingRequest({
-        peerId,
-        name: data.profile?.name || data.profile?.username,
-      });
+      const name = data.profile?.name || data.profile?.username || 'Someone';
+      setPendingRequest({ peerId, name });
+      fireNotification(
+        'AirChat',
+        `${name} wants to connect with you`,
+        `req_${peerId}`
+      );
     });
 
+    // ── 6. Contact accepted ───────────────────────────────────────────────
     nostrService.onContactAccepted((peerId) => {
       retryAttempts.current.set(peerId, 0);
     });
 
+    // ── 7. Peer online ────────────────────────────────────────────────────
     nostrService.onPeerOnline(async (peerId) => {
       const t = retryTimers.current.get(peerId);
       if (t) {
@@ -187,19 +225,10 @@ export function NostrProvider({ children }) {
         retryTimers.current.delete(peerId);
       }
       retryAttempts.current.set(peerId, 0);
-      await db.contacts.update(peerId, {
-        online: true,
-        connectionStatus: 'connected',
-        lastSeen: null,
-      });
     });
 
+    // ── 8. Peer offline ───────────────────────────────────────────────────
     nostrService.onPeerOffline(async (peerId) => {
-      await db.contacts.update(peerId, {
-        online: false,
-        connectionStatus: 'disconnected',
-        lastSeen: Date.now(),
-      });
       const contact = await db.contacts.get(peerId);
       if (!contact?.isAccepted) return;
 
@@ -214,8 +243,7 @@ export function NostrProvider({ children }) {
       retryTimers.current.set(peerId, t);
     });
 
-    // ── 3. Auto-connect to accepted contacts after relay is ready ────────────
-    // Staggered with a small delay so relay:connect fires first
+    // ── 9. Auto-connect to accepted contacts ──────────────────────────────
     const autoConnectTimer = setTimeout(async () => {
       const contacts = await db.contacts
         .filter((c) => c.isAccepted === true)
@@ -232,7 +260,22 @@ export function NostrProvider({ children }) {
       }
     }, 1500);
 
-    // ── 4. Expose manual reconnect for ChatHeader ─────────────────────────
+    // ── 10. Re-sync when tab becomes visible ──────────────────────────────
+    const handleVisibilityChange = async () => {
+      if (document.hidden) return;
+      console.log('[app] tab visible — re-syncing');
+      nostrService._subscribe();
+      const contacts = await db.contacts
+        .filter((c) => c.isAccepted === true)
+        .toArray();
+      for (const contact of contacts) {
+        if (!nostrService.isConnected(contact.peerId))
+          attemptReconnect(contact);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // ── 11. Manual reconnect for ChatHeader ───────────────────────────────
     window.manualReconnect = async (peerId) => {
       const t = retryTimers.current.get(peerId);
       if (t) {
@@ -246,13 +289,12 @@ export function NostrProvider({ children }) {
 
     return () => {
       clearTimeout(autoConnectTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       retryTimers.current.forEach((t) => clearTimeout(t));
       retryTimers.current.clear();
       delete window.manualReconnect;
     };
-  }, [myProfile?.peerId]); // runs once when profile is first available
-
-  // ─── Contact request handlers ─────────────────────────────────────────────
+  }, [myProfile?.peerId, attemptReconnect]);
 
   const handleAcceptRequest = useCallback(
     async (peerId) => {

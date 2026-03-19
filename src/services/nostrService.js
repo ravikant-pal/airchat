@@ -24,16 +24,31 @@ import { db } from './db';
 
 // Free public Nostr relays — only used for signaling handshake + offline fallback
 // Your actual chat data goes over direct WebRTC after handshake
-const RELAYS = ['wss://relay.damus.io', 'wss://relay.primal.net'];
+const RELAYS = [
+  // ── Tier 1: Highest uptime, operator-backed, years of track record ─────
+  'wss://relay.damus.io', // Damus team, North America, >99.9% uptime
+  'wss://relay.primal.net', // Primal team, purpose-built infrastructure
+  'wss://nos.lol', // consistently ranked among the most stable
+
+  // ── Tier 2: Well established, global coverage ──────────────────────────
+  'wss://relay.nostr.band', // search-focused, global, open access
+  'wss://relay.snort.social', // Snort client team, Europe
+  'wss://nostr.wine', // high quality, low spam (some events need payment)
+
+  // ── Tier 3: Geographic diversity — censorship resistance ──────────────
+  'wss://nostr.lu.ke', // Luxembourg, EU jurisdiction
+  'wss://relay.nostr.bg', // Bulgaria, Eastern Europe
+  'wss://nostr.oxtr.dev', // Asia-Pacific coverage
+];
 
 // Google STUN — free, no account needed, handles NAT traversal
 const STUN = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  // { urls: 'stun:stun2.l.google.com:19302' },
-  // { urls: 'stun:stun3.l.google.com:19302' },
-  // { urls: 'stun:stun4.l.google.com:19302' },
-  // { urls: 'stun:stun.services.mozilla.com' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
+  { urls: 'stun:stun.services.mozilla.com' },
 ];
 
 const bytesToHex = (b) =>
@@ -180,8 +195,6 @@ class NostrService {
 
   // Send an encrypted Nostr DM — used for signaling + offline message fallback
   async _sendDM(toPubKey, content) {
-    // Wait for relay before publishing — critical on slow mobile connections
-    await this.relayReady;
     const recipient = new NDKUser({ pubkey: toPubKey });
     const encrypted = await this.ndk.signer.encrypt(
       recipient,
@@ -402,17 +415,16 @@ class NostrService {
       const s = pc.iceConnectionState;
       console.log(`[webrtc] ICE ${peerId.slice(0, 8)}: ${s}`);
 
-      if (s === 'connected' || s === 'completed') {
+      // Show 'connecting' during ICE negotiation so badge is honest
+      if (s === 'checking') {
         await db.contacts.update(peerId, {
-          online: true,
-          connectionStatus: 'connected',
-          lastSeen: null,
+          connectionStatus: 'connecting',
+          online: false,
         });
-        if (this.onOnlineCallback) this.onOnlineCallback(peerId);
-        this._startHeartbeat(peerId);
-        // NOTE: _sendPendingMessages is called in dc.onopen, not here.
-        // ICE 'connected' fires before the data channel is actually open.
       }
+
+      // Do NOT mark as 'connected' here — DataChannel may not be open yet.
+      // Badge update moved to dc.onopen which is the true ready signal.
 
       if (s === 'disconnected' || s === 'failed' || s === 'closed') {
         this._teardown(peerId);
@@ -432,12 +444,20 @@ class NostrService {
   _wireDataChannel(peerId, dc) {
     dc.onopen = async () => {
       console.log(`[dc] open with ${peerId.slice(0, 8)}`);
-      // Data channel is ACTUALLY open here — safe to send pending messages now.
-      // ICE 'connected' fires before dc.onopen so calling _sendPendingMessages
-      // in oniceconnectionstatechange was too early — channel wasn't open yet.
+      // DataChannel open = truly connected. Update badge HERE not in ICE handler.
+      await db.contacts.update(peerId, {
+        online: true,
+        connectionStatus: 'connected',
+        lastSeen: null,
+      });
+      if (this.onOnlineCallback) this.onOnlineCallback(peerId);
+      this._startHeartbeat(peerId);
       await this._sendPendingMessages(peerId);
     };
-    dc.onclose = () => console.log(`[dc] closed with ${peerId.slice(0, 8)}`);
+    dc.onclose = () => {
+      console.log(`[dc] closed with ${peerId.slice(0, 8)}`);
+      // DC close also means offline — teardown handles the rest via ICE events
+    };
     dc.onmessage = ({ data }) => this._onDCMessage(peerId, JSON.parse(data));
   }
 

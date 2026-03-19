@@ -24,7 +24,7 @@ import {
   saveAvatarToCache,
 } from '../../services/cacheService';
 import { db } from '../../services/db';
-import { getPubKey } from '../../services/nostrService';
+import { getPubKey, nostrService } from '../../services/nostrService';
 
 export default function ProfileDialog({ open, setOpen }) {
   const [displayName, setDisplayName] = useState('');
@@ -72,6 +72,11 @@ export default function ProfileDialog({ open, setOpen }) {
         name: displayName,
         ...(avatarKey && { avatarKey }),
       });
+      // Fix 4 — broadcast updated profile to all currently connected contacts.
+      // _onDCMessage already handles 'profile_update' on the receiving side
+      // and updates their local Dexie contact entry immediately.
+      const updatedProfile = await db.profile.toCollection().first();
+      nostrService.broadcastProfileUpdate(updatedProfile);
     } else {
       await db.profile.add({
         peerId: pubKey,
