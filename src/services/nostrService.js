@@ -25,20 +25,14 @@ import { db } from './db';
 // Free public Nostr relays — only used for signaling handshake + offline fallback
 // Your actual chat data goes over direct WebRTC after handshake
 const RELAYS = [
-  // ── Tier 1: Highest uptime, operator-backed, years of track record ─────
-  'wss://relay.damus.io', // Damus team, North America, >99.9% uptime
-  'wss://relay.primal.net', // Primal team, purpose-built infrastructure
-  'wss://nos.lol', // consistently ranked among the most stable
+  // These two MUST connect — relayReady waits for first of these
+  'wss://relay.damus.io',
+  'wss://relay.primal.net',
 
-  // ── Tier 2: Well established, global coverage ──────────────────────────
-  'wss://relay.nostr.band', // search-focused, global, open access
-  'wss://relay.snort.social', // Snort client team, Europe
-  'wss://nostr.wine', // high quality, low spam (some events need payment)
-
-  // ── Tier 3: Geographic diversity — censorship resistance ──────────────
-  'wss://nostr.lu.ke', // Luxembourg, EU jurisdiction
-  'wss://relay.nostr.bg', // Bulgaria, Eastern Europe
-  'wss://nostr.oxtr.dev', // Asia-Pacific coverage
+  // These are bonus — connect if available, silent if not
+  // 'wss://nos.lol',
+  // 'wss://relay.nostr.band',
+  // 'wss://relay.snort.social',
 ];
 
 // Google STUN — free, no account needed, handles NAT traversal
