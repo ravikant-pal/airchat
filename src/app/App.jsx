@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { ChatWindow } from '../components/chat/ChatWindow';
 import { ChatList } from '../components/contacts/ChatList';
 import { ContactRequestDialog } from '../components/modals/ContactRequestDialog';
-import { useNostr } from '../contexts/NostrContext';
+import { useNostr } from '../contexts/NostrProvider';
 import AppShell from './AppShell';
 
 export default function App({ toggleTheme, themeMode }) {
