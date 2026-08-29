@@ -4,14 +4,18 @@ import { db } from '../../services/db';
 import EmptyState from '../utils/EmptyState';
 import { MessageBubble } from './MessageBubble';
 
-export function MessageList({ peerId }) {
-  const messages = useLiveQuery(
+export function MessageList({ peerId, messages: overrideMessages }) {
+  const liveMessages = useLiveQuery(
     () =>
       peerId
         ? db.messages.where('peerId').equals(peerId).sortBy('timestamp')
         : [],
     [peerId],
   );
+
+  // `messages` (in-memory, e.g. Random Connect) takes precedence over the
+  // persisted IndexedDB history used by private chats.
+  const messages = overrideMessages ?? liveMessages;
 
   const hasMessages = messages && messages.length > 0;
 

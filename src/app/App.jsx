@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ChatWindow } from '../components/chat/ChatWindow';
 import { ChatList } from '../components/contacts/ChatList';
 import { ContactRequestDialog } from '../components/modals/ContactRequestDialog';
+import RandomScreen from '../components/random/RandomScreen';
+import { RandomConnectProvider } from '../contexts/RandomConnectProvider';
 import { useNostr } from '../contexts/NostrProvider';
 import AppShell from './AppShell';
 
@@ -15,11 +17,15 @@ export default function App({ toggleTheme, themeMode }) {
     myProfile,
   } = useNostr();
 
+  // 'private' = persistent/vetted contacts · 'random' = anonymous connections
+  const [chatMode, setChatMode] = useState('private');
+
   useEffect(() => {
     // Handle notification tap when app was ALREADY OPEN (minimized)
     // SW sends a postMessage → we open the right chat
     const handleSWMessage = (event) => {
       if (event.data?.type === 'OPEN_CHAT') {
+        setChatMode('private');
         setActivePeer(event.data.pubkey);
       }
     };
@@ -40,6 +46,21 @@ export default function App({ toggleTheme, themeMode }) {
     };
   }, [setActivePeer]);
 
+  if (chatMode === 'random') {
+    return (
+      <>
+        <RandomConnectProvider>
+          <RandomScreen onBackToChats={() => setChatMode('private')} />
+        </RandomConnectProvider>
+        <ContactRequestDialog
+          request={pendingRequest}
+          onAccept={handleAcceptRequest}
+          onReject={handleRejectRequest}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       <AppShell
@@ -50,6 +71,7 @@ export default function App({ toggleTheme, themeMode }) {
             myProfile={myProfile}
             toggleTheme={toggleTheme}
             themeMode={themeMode}
+            onEnterRandom={() => setChatMode('random')}
           />
         }
         chatWindow={

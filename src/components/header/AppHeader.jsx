@@ -4,6 +4,7 @@ import FullscreenRounded from '@mui/icons-material/FullscreenRounded';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import SearchRounded from '@mui/icons-material/SearchRounded';
 import SettingsIcon from '@mui/icons-material/Settings';
+import ShuffleRounded from '@mui/icons-material/ShuffleRounded';
 import {
   AppBar,
   IconButton,
@@ -17,7 +18,7 @@ import { useState } from 'react';
 import { useFullscreen } from '../../contexts/FullscreenProvider';
 import ProfileDialog from '../modals/ProfileDialog';
 
-export function AppHeader({ search, onSearch, toggleTheme, themeMode }) {
+export function AppHeader({ search, onSearch, toggleTheme, themeMode, onEnterRandom }) {
   const [openProfile, setOpenProfile] = useState(false);
   const { isFullscreen, toggleFullscreen } = useFullscreen();
 
@@ -29,12 +30,11 @@ export function AppHeader({ search, onSearch, toggleTheme, themeMode }) {
         <Typography flex={1} fontSize={24} fontWeight={600}>
           AirChat
         </Typography>
-        {/* <IconButton
-          onClick={() => setOpenProfile(true)}
-          sx={{ color: 'inherit' }}
-        >
-          <PhonelinkEraseRounded />
-        </IconButton> */}
+        <Tooltip title='Random Connect — meet a stranger (temp chat, voice & video)'>
+          <IconButton onClick={onEnterRandom} sx={{ color: 'inherit' }}>
+            <ShuffleRounded />
+          </IconButton>
+        </Tooltip>
         <IconButton
           onClick={() => setOpenProfile(true)}
           sx={{ color: 'inherit' }}

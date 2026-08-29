@@ -6,7 +6,7 @@ import { AppHeader } from '../header/AppHeader';
 import { AddContactButton } from './AddContactButton';
 import { ChatListItem } from './ChatListItem';
 
-export function ChatList({ onSelect, myProfile, toggleTheme, themeMode }) {
+export function ChatList({ onSelect, myProfile, toggleTheme, themeMode, onEnterRandom }) {
   const [search, setSearch] = useState('');
 
   // Get all contacts and messages in one query
@@ -59,6 +59,7 @@ export function ChatList({ onSelect, myProfile, toggleTheme, themeMode }) {
         onSearch={(e) => setSearch(e.target.value)}
         toggleTheme={toggleTheme}
         themeMode={themeMode}
+        onEnterRandom={onEnterRandom}
       />
       <List>
         {hasResults ? (
